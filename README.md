@@ -1,6 +1,6 @@
 # 🚴🏻‍♀️ Strava Activity Dashboard 🥇
 
-An **interactive web dashboard** that visualizes your Strava activities from a CSV export.  
+**Interactive web dashboard** that visualizes your Strava activities from a CSV export.  
 Upload your file, explore your routes on a map, and see your stats in an interactive chart — all in your browser.
 
 ---
@@ -11,7 +11,7 @@ Upload your file, explore your routes on a map, and see your stats in an interac
 ![Dashboard Screenshot](images/dashboard-screenshot.png)
 
 **Demo GIF**  
-![Dashboard Demo](images/dashboard-screenshot.gif)
+![Dashboard Demo](images/dashboard-demo.gif)
 
 ---
 
@@ -20,6 +20,7 @@ Upload your file, explore your routes on a map, and see your stats in an interac
 - 🗺 **Interactive Map** — zoom, pan, and view your activities.
 - 📊 **Dynamic Chart** — visualize distance, elevation, or time.
 - 🔍 **Sport Filter** — view activities by sport type.
+- 🔍 **Date Range Filter** — view activities by date range.
 - 📱 **Responsive Layout** — works on laptops, tablets, and mobiles.
 - 💬 **Welcome Modal** — friendly intro for first-time visitors.
 
@@ -33,10 +34,10 @@ project/
 ├── style.css # Layout and styling
 ├── script.js # App logic 
 ├── images/ # Logos, screenshots, GIFs
-│ ├── strava.png # Strava Logo
-│ ├── NS.png # Personal Logo
+│ ├── dashboard-icon.png # Flavicon
+│ ├── dashboard-demo.gif
 │ ├── dashboard-screenshot.png
-│ └── dashboard-demo.gif
+│ └── NS-logo.png # Author's Logo
 └── README.md # This file
 ```
 ---
@@ -80,6 +81,13 @@ PapaParse — CSV parsing
 Mapbox Polyline — decoding Strava routes
 
 ---
+
+## Author
+
+Nicole Salazar-Cuellar
+
+Website: https://nicolevasos.github.io/  
+Blog: https://nicolevasos.github.io/blog.html
 
 ## License
 

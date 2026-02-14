@@ -1,17 +1,61 @@
-//------------------ Map Initialization ------------------//
+//------------------ DOM Elements ------------------//
+const modal = document.getElementById('welcomeModal');
+const closeBtn = document.getElementById('closeModal');
+const fileInput = document.getElementById('fileInput');
+const sportFilter = document.getElementById('sportFilter');
+const refreshBtn = document.getElementById('refreshFilters');
+const kpiDistance = document.getElementById("kpi-distance");
+const kpiElev = document.getElementById("kpi-elev");
+const kpiPace = document.getElementById("kpi-pace");
+const kpiSpeed = document.getElementById("kpi-speed");
+const kpiCount = document.getElementById("kpi-count");
+const kpiConsistency = document.getElementById("kpi-consistency");
+const kpiVolumeTrend = document.getElementById("kpi-volume-trend");
+
+//------------------ Global State ------------------//
+
+const STATE = {
+  viewStart: null,
+  viewEnd: null
+};
+
+// Data Storage
+const activityData = {};   // sport_type → array of latlngs
+const activityMeta = {};   // sport_type → array of {date, elevation, distance, moving_time, country, name} 
+let chart;
+
+
+//---------------- Map Initialization ---------------//
 const map = L.map('map').setView([0, 0], 2);
 
+
+
+//---------------- Layers + Legend ------------------//
+
+// Base Map
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
   subdomains: 'abcd',
   maxZoom: 19
 }).addTo(map);
 
-// Heatmap Legend
-var legend = L.control({ position: 'bottomleft' });
+// Heatmap Layer
+const heatLayer = L.heatLayer([], {
+  radius: 8, blur: 7, maxZoom: 17, minOpacity: 0.4,
+  gradient: { 0: 'blue', 0.25: 'cyan', 0.5: 'lime', 0.75: 'yellow', 1: 'red' },
+  max: 1
+});
 
+// Polyline Layer
+const polylineLayer = L.layerGroup().addTo(map);
+
+// Layer Control
+const layerControl = L.control.layers({}, { "Routes": polylineLayer, "Density Heatmap": heatLayer }).addTo(map);
+
+//Legend
+const legend = L.control({ position: 'bottomleft' });
 legend.onAdd = function(map) {
-    var div = L.DomUtil.create('div', 'leaflet-control-legend');
+    const div = L.DomUtil.create('div', 'leaflet-control-legend');
     div.innerHTML = `
         <p><b>Activity Density</b></p>
         <span class="gradient"></span>
@@ -20,38 +64,31 @@ legend.onAdd = function(map) {
     return div;
 };
 
+// Legend Toggle Behavior
 map.on('overlayadd', function(e) {
-    if (e.name === 'Density Heatmap') legend.addTo(map);
+    if (e.layer === heatLayer) {legend.addTo(map);}
 });
+
 map.on('overlayremove', function(e) {
-    if (e.name === 'Density Heatmap') map.removeControl(legend);
+    if (e.layer === heatLayer) {map.removeControl(legend);}
 });
 
-const polylineLayer = L.layerGroup().addTo(map);
-const heatLayer = L.heatLayer([], {
-  radius: 8, blur: 7, maxZoom: 17, minOpacity: 0.4,
-  gradient: { 0: 'blue', 0.25: 'cyan', 0.5: 'lime', 0.75: 'yellow', 1: 'red' },
-  max: 1
+
+//-------------------- Modal --------------------//
+
+// Close when clicking button
+closeBtn.addEventListener('click', () => {
+  modal.style.display = 'none';
 });
 
-const layerControl = L.control.layers({}, { "Routes": polylineLayer, "Density Heatmap": heatLayer }).addTo(map);
+// Close when clicking outside content
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) {
+    modal.style.display = 'none';
+  }
+});
 
-//------------------ Data Storage ------------------//
-const activityData = {};   // sport_type → array of latlngs
-const activityMeta = {};   // sport_type → array of {date, elevation, distance, moving_time, country, name} 
-let chart; // Chart.js instance
 
-//------------------ DOM Elements ------------------//
-const fileInput = document.getElementById('fileInput');
-const sportFilter = document.getElementById('sportFilter');
-
-// -----------------------
-// Global state
-// -----------------------
-const STATE = {
-  viewStart: null,
-  viewEnd: null
-};
 
 //------------------ Utilities ------------------//
 const m2km = m => m / 1000;
@@ -73,6 +110,7 @@ const secToHMS = (sec) => {
     ].filter(Boolean).join(':');
 };
 
+// Polyline Decoder 
 function decodePolyline(str, precision = 5) {
   let index = 0, lat = 0, lng = 0, coordinates = [];
   const factor = Math.pow(10, precision);
@@ -90,16 +128,9 @@ function decodePolyline(str, precision = 5) {
   return coordinates;
 }
 
-// Filtered activities by date range (defined globally for use in event listeners)
-function filterByDate(act) {
-    if (STATE.viewStart && act.date < STATE.viewStart) return false;
-    if (STATE.viewEnd && act.date > STATE.viewEnd) return false;
-    return true;
-}
+//------------------ Filters ------------------//
 
-// -----------------------
-// Activity filtering logic for all components (DRY principle)
-// -----------------------
+// Filter by sport
 function getFilteredActivities(selectedSport, bounds, filterByDate) {
     let acts = [];
     const sportsToUse = selectedSport === "all" ? Object.keys(activityMeta) : [selectedSport];
@@ -130,7 +161,77 @@ function getFilteredActivities(selectedSport, bounds, filterByDate) {
     return acts;
 }
 
-//------------------ KPIs ------------------//
+// Filter by date range
+function filterByDate(act) {
+    if (STATE.viewStart && act.date < STATE.viewStart) return false;
+    if (STATE.viewEnd && act.date > STATE.viewEnd) return false;
+    return true;
+}
+
+//---------------- Render Functions ----------------//
+
+// Map Update with bounds Function
+function updateMap(selectedSport, filterByDate = ()=>true) {
+  polylineLayer.clearLayers();
+  let allCoords = [];
+  const filteredActivities = getFilteredActivities(selectedSport, null, filterByDate); // Get all visible routes
+  
+  const currentRoutes = [];
+
+  filteredActivities.forEach(activity => {
+      const meta = activity.meta;
+      const latlngs = activity.coords;
+
+      if (!latlngs) return; // Skip if no coordinates
+
+      const poly = L.polyline(latlngs, { color: 'blue', weight: 2, opacity: 0.6 }).addTo(polylineLayer);
+      currentRoutes.push(poly);
+      allCoords.push(...latlngs);
+
+      poly.on('mouseover', function(e) {
+        L.popup({ offset: L.point(0, -10), closeButton: false, autoClose: false, className: 'route-popup' })
+          .setLatLng(e.latlng)
+          .setContent(`
+            <b>Sport:</b> ${activity.sport}<br>
+            <b>Date:</b> ${meta.date.toLocaleDateString()}<br>
+            <b>Distance:</b> ${(meta.distance/1000).toFixed(2)} km<br>
+            <b>Elevation:</b> ${meta.elevation.toFixed(0)} m<br>
+            <b>Moving time:</b> ${(meta.moving_time/3600).toFixed(2)} h<br>
+            <b>Name:</b> ${meta.name || 'N/A'}
+          `)
+          .openOn(map);
+      });
+      poly.on('mouseout', () => map.closePopup());
+    });
+    
+    // Fit Bounds to the new filtered routes
+    if (currentRoutes.length > 0) {
+      const featureGroup = L.featureGroup(currentRoutes);
+      // Check if bounds are valid 
+      const bounds = featureGroup.getBounds();
+      if (bounds && bounds.isValid && bounds.isValid()) map.fitBounds(bounds, { padding: [20,20] }); // <<< FIXED
+      }
+      // Heatmap generation logic 
+      if (allCoords.length > 0) {
+      const pointMap = {};
+      allCoords.forEach(([lat, lng]) => {
+        const key = lat.toFixed(5) + ',' + lng.toFixed(5);
+        pointMap[key] = (pointMap[key] || 0) + 1;
+      });
+      const maxCount = Math.max(...Object.values(pointMap));
+      const heatPoints = Object.entries(pointMap).map(([key, count]) => {
+        const [lat, lng] = key.split(',').map(Number);
+        const intensity = 0.3 + 0.7 * (Math.log(count + 1) / Math.log(maxCount + 1)); 
+        return [lat, lng, intensity];
+      });
+      heatLayer.setLatLngs(heatPoints);
+      if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+    } else {
+      if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    }
+}
+
+// KPIs
 function renderKPIs(selectedSport, bounds = null, filterByDate = ()=>true) {
   const acts = getFilteredActivities(selectedSport, bounds, filterByDate).map(a => a.meta);
 
@@ -143,62 +244,85 @@ function renderKPIs(selectedSport, bounds = null, filterByDate = ()=>true) {
   const avgSpeed = totalHours > 0 ? (totalKm / totalHours) : 0;
   const avgPace = totalDist > 0 ? (totalTime/totalKm) : NaN;
   
-  document.getElementById("kpi-distance").textContent = totalKm.toFixed(1);
-  document.getElementById("kpi-elev").textContent = `${totalElevation.toFixed(0)} m`;
-  document.getElementById("kpi-pace").textContent = secToPace(avgPace);
-  document.getElementById("kpi-speed").textContent = `${avgSpeed.toFixed(1)} km/h`;
-  document.getElementById("kpi-count").textContent = acts.length;
+  kpiDistance.textContent = totalKm.toFixed(1);
+  kpiElev.textContent = `${totalElevation.toFixed(0)} m`;
+  kpiPace.textContent = secToPace(avgPace);
+  kpiSpeed.textContent = `${avgSpeed.toFixed(1)} km/h`;
+  kpiCount.textContent = acts.length;
+  }
+
+// Performance Summary KPIs
+function renderStrategicKPIs(selectedSport, bounds = null, filterByDate = ()=>true) {
+
+  const acts = getFilteredActivities(selectedSport, bounds, filterByDate)
+                .map(a => a.meta)
+                .filter(a => a.date);
+  const kpiVolumeTrend = document.getElementById("kpi-volume-trend");
+
+  if (!acts.length) {
+    kpiConsistency.textContent = "--";
+    kpiVolumeTrend.textContent = "--";
+    return;
+  }
+
+  const latestDate = new Date(Math.max(...acts.map(a => a.date)));
+
+  // Training Consistency (Last 12 Weeks)
+
+  const WEEKS_TO_ANALYZE = 12;
+  const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+  let activeWeeks = new Set();
+
+  acts.forEach(a => {
+    const diff = latestDate - a.date;
+    const weekIndex = Math.floor(diff / MS_PER_WEEK);
+
+    if (weekIndex >= 0 && weekIndex < WEEKS_TO_ANALYZE) {
+      activeWeeks.add(weekIndex);
+    }
+  });
+
+  const consistency = (activeWeeks.size / WEEKS_TO_ANALYZE) * 100;
+
+  kpiConsistency.textContent = `${consistency.toFixed(0)}%`;
+
+  kpiConsistency.style.color =
+    consistency >= 80 ? "green" :
+    consistency >= 50 ? "orange" :
+    "red";
+
+  // Volumne Trend (30-day)
+
+  const last30 = new Date(latestDate);
+  last30.setDate(last30.getDate() - 30);
+
+  const prev30 = new Date(latestDate);
+  prev30.setDate(prev30.getDate() - 60);
+
+  const volumeLast30 = acts
+    .filter(a => a.date >= last30)
+    .reduce((sum, a) => sum + (a.distance || 0), 0);
+
+  const volumePrev30 = acts
+    .filter(a => a.date >= prev30 && a.date < last30)
+    .reduce((sum, a) => sum + (a.distance || 0), 0);
+
+  let trend = 0;
+
+  if (volumePrev30 > 0) {
+    trend = ((volumeLast30 - volumePrev30) / volumePrev30) * 100;
+  }
+
+  kpiVolumeTrend.textContent = `${trend >= 0 ? "+" : ""}${trend.toFixed(1)}%`;
+
+  kpiVolumeTrend.style.color =
+    trend > 5 ? "green" :
+    trend < -5 ? "red" :
+    "orange";
 }
 
-//------------------ Geographic Summary Function (Final Fix) ------------------//
-function renderGeographicSummary(selectedSport, bounds = null, filterByDate = ()=>true) {
-    // 1. Use the central filtering logic to get activities that pass all checks
-    const filteredActivities = getFilteredActivities(selectedSport, bounds, filterByDate);
-
-    // 2. Initialize Sets
-    const uniqueCountries = new Set();
-    const uniqueCities = new Set(); 
-    
-    // 3. Process the filtered list
-    filteredActivities.forEach(activity => {
-        const act = activity.meta;
-
-        // Check 1: Country
-        if (act.country && act.country.trim() !== '') {
-            uniqueCountries.add(act.country.trim());
-        }
-        
-        // Check 2: City Proxy
-        if (act.country && act.name && act.country.trim() !== '') {
-            // Take the first word of the activity name as a city proxy
-            const cityProxy = act.name.split(' ')[0].trim();
-            
-            // Only count if the proxy isn't empty and isn't just a generic placeholder (e.g., 'Activity')
-            if (cityProxy && cityProxy.toLowerCase() !== 'activity') {
-                 // Use a combined key for global uniqueness
-                 uniqueCities.add(act.country.trim() + "_" + cityProxy);
-            }
-        }
-    });
-
-    // 4. Update the DOM elements (using safe checks)
-    const countryEl = document.getElementById("kpi-countries");
-    const cityEl = document.getElementById("kpi-cities");
-
-    if (countryEl) {
-        countryEl.textContent = uniqueCountries.size;
-    } else {
-        console.error("Missing DOM element: #kpi-countries");
-    }
-
-    if (cityEl) {
-        cityEl.textContent = uniqueCities.size;
-    } else {
-        console.error("Missing DOM element: #kpi-cities");
-    }
-}
-
-//------------------ Personal Bests ------------------//
+// Personal Bests
 function renderPersonalBests(selectedSport, bounds = null, filterByDate = ()=>true) {
     const tableBody = document.getElementById('personal-bests-table');
     
@@ -265,75 +389,7 @@ function renderPersonalBests(selectedSport, bounds = null, filterByDate = ()=>tr
     tbody.innerHTML = distanceRow + durationRow;
 }
 
-//------------------ Map Update Function (Includes correct fitBounds) ------------------//
-function updateMap(selectedSport, filterByDate = ()=>true) {
-  polylineLayer.clearLayers();
-  let allCoords = [];
-  const filteredActivities = getFilteredActivities(selectedSport, null, filterByDate); // Get all visible routes (ignoring map bounds for now)
-  
-  const currentRoutes = [];
-
-  filteredActivities.forEach(activity => {
-      const meta = activity.meta;
-      const latlngs = activity.coords;
-
-      if (!latlngs) return; // Skip if no coordinates
-
-      const poly = L.polyline(latlngs, { color: 'blue', weight: 2, opacity: 0.6 }).addTo(polylineLayer);
-      currentRoutes.push(poly);
-      allCoords.push(...latlngs);
-
-      poly.on('mouseover', function(e) {
-        L.popup({ offset: L.point(0, -10), closeButton: false, autoClose: false, className: 'route-popup' })
-          .setLatLng(e.latlng)
-          .setContent(`
-            <b>Sport:</b> ${activity.sport}<br>
-            <b>Date:</b> ${meta.date.toLocaleDateString()}<br>
-            <b>Distance:</b> ${(meta.distance/1000).toFixed(2)} km<br>
-            <b>Elevation:</b> ${meta.elevation.toFixed(0)} m<br>
-            <b>Moving time:</b> ${(meta.moving_time/3600).toFixed(2)} h<br>
-            <b>Name:</b> ${meta.name || 'N/A'}
-          `)
-          .openOn(map);
-      });
-      poly.on('mouseout', () => map.closePopup());
-  });
-
-  // Fit Bounds to the new filtered routes
-  if (currentRoutes.length > 0) {
-    const featureGroup = L.featureGroup(currentRoutes);
-    const bounds = featureGroup.getBounds();
-    
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, {
-        padding: [20, 20]
-      });
-    }
-  } else {
-      if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
-  }
-
-  // Heatmap generation logic
-  if (allCoords.length > 0) {
-    const pointMap = {};
-    allCoords.forEach(([lat, lng]) => {
-      const key = lat.toFixed(5) + ',' + lng.toFixed(5);
-      pointMap[key] = (pointMap[key] || 0) + 1;
-    });
-    const maxCount = Math.max(...Object.values(pointMap));
-    const heatPoints = Object.entries(pointMap).map(([key, count]) => {
-      const [lat, lng] = key.split(',').map(Number);
-      const intensity = 0.3 + 0.7 * (Math.log(count + 1) / Math.log(maxCount + 1)); 
-      return [lat, lng, intensity];
-    });
-    heatLayer.setLatLngs(heatPoints);
-    if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
-  } else {
-    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
-  }
-}
-
-//------------------ Chart Update Function ------------------//
+// Update Chart
 function updateChart(selectedSport, bounds = null, filterByDate = ()=>true) {
   const monthlyData = {};
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -369,7 +425,7 @@ function updateChart(selectedSport, bounds = null, filterByDate = ()=>true) {
     const ctx = document.getElementById('activityChart').getContext('2d');
     chart = new Chart(ctx, {
       type: 'bar',
-      data: { labels: months, datasets: [{ label, data: displayData, backgroundColor: '#ceb3c9', borderColor: '#bea6baff', borderWidth: 2 }] },
+      data: { labels: months, datasets: [{ label, data: displayData, backgroundColor: '#ff9161', borderColor: '#FC4C02', borderWidth: 2 }] },
       options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
   } else {
@@ -379,7 +435,47 @@ function updateChart(selectedSport, bounds = null, filterByDate = ()=>true) {
   }
 }
 
-//------------------ Data Processing Logic (Shared by default load and upload) ------------------//
+const uploadBtn = document.getElementById('uploadDataBtn');
+
+
+
+
+// Trigger file selection dialog
+uploadBtn.addEventListener('click', () => {
+  fileInput.click();
+});
+
+// Handle user-uploaded file
+fileInput.addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Process user's CSV
+  Papa.parse(file, {
+    header: true,
+    complete: (results) => {
+      processData(results); // overwrite data arrays with user's data
+      modal.style.display = 'none'; // close modal
+    }
+  });
+});
+
+
+// Render All (central refresh)
+function renderAll() {
+  const sport = sportFilter.value;
+
+  updateMap(sport, filterByDate);                    // 1. Map Update: Includes the logic for fitBounds based on new filters
+
+  const bounds = map.getBounds();                    //AFTER UPDATE MAP
+  
+  renderStrategicKPIs(sport, bounds, filterByDate);  // 2. Performance Summary Update
+  renderKPIs(sport, bounds, filterByDate);           // 3. KPI Update
+  updateChart(sport, bounds, filterByDate);          // 4. Chart Update
+  renderPersonalBests(sport, bounds, filterByDate);  // 5. PBs Update 
+}
+
+//------------------ Data Processing Logic ------------------//
 function processData(results) {
   // Clear existing data before processing new data
   Object.keys(activityData).forEach(key => delete activityData[key]);
@@ -410,12 +506,14 @@ function processData(results) {
       const country = row["location_country"] || null;
       const name = row["name"] || null; 
 
-      if (date) activityMeta[sport].push({ date, elevation, distance, moving_time, country, name }); 
+      if (date) 
+        
+        activityMeta[sport].push({ date, elevation, distance, moving_time, country, name }); 
     } catch (e) {
       console.error("Invalid polyline", e);
     }
   });
-
+  
   Object.keys(activityData).forEach(sport => {
     if (!Array.from(sportFilter.options).some(o => o.value === sport)) {
       const option = document.createElement('option');
@@ -428,14 +526,14 @@ function processData(results) {
   // Set filter to 'all'
   sportFilter.value = "all";
   
-  // RENDER ALL COMPONENTS ONCE AFTER DATA LOAD
+  // Render all components once after data loads
   renderAll(); 
 
   // Hide the upload control
   document.getElementById('controls').style.display = 'none';
 }
 
-//------------------ Default Data Loader ------------------//
+// Default Data Loader
 function loadDefaultData() {
   const defaultFilePath = 'data/nicole_strava.csv';
   console.log(`Loading default data from: ${defaultFilePath}`);
@@ -456,12 +554,11 @@ function loadDefaultData() {
     .catch(error => {
       console.error("Dashboard failed to load default data:", error);
       document.getElementById('controls').style.display = 'block'; 
-      document.getElementById('welcomeModal').style.display = 'block';
+
     });
 }
 
-
-//------------------ File Upload Handler ------------------//
+// File Upload Handler
 fileInput.addEventListener('change', function(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -472,7 +569,10 @@ fileInput.addEventListener('change', function(event) {
   });
 });
 
-//------------------ Date pickers & quick filters ------------------//
+
+//------------------ Events ------------------//
+
+// Date pickers & quick filters
 const fpStart = flatpickr('#startDate',{
   dateFormat:'Y-m-d',
   onChange:([d])=>{
@@ -488,54 +588,40 @@ const fpEnd   = flatpickr('#endDate',{
   }
 });
 
+// Reset Filters Button
+refreshBtn.addEventListener('click', () => {
 
-//------------------ Modal ------------------//
-const modal = document.getElementById('welcomeModal');
-const closeBtn = document.getElementById('closeModal');
-closeBtn.addEventListener('click', () => modal.style.display = 'none');
-window.addEventListener('click', (e) => { if(e.target === modal) modal.style.display = 'none'; });
+  // Clear date filters
+  STATE.viewStart = null;
+  STATE.viewEnd = null;
 
-//------------------ Events ------------------//
+  fpStart.clear();
+  fpEnd.clear();
 
-// Update KPIs, Charts, PBs, and Geo Summary when map moves
+  sportFilter.value = "all"; // Reset sport filter
+  map.setView([0, 0], 2);  // Reset map view
+
+  renderAll(); // Re-render everything
+});
+
+// Update KPIs, Charts, PBs, and Performance Summary when bbox changes
 map.on('moveend', () => {
   const bounds = map.getBounds();
   const sport = sportFilter.value;
+
   // IMPORTANT: DO NOT call updateMap here, it causes a zoom loop.
   updateChart(sport, bounds, filterByDate);
   renderKPIs(sport, bounds, filterByDate);   
   renderPersonalBests(sport, bounds, filterByDate); 
-  renderGeographicSummary(sport, bounds, filterByDate); 
+  renderStrategicKPIs(sport, bounds, filterByDate); 
 });
 
-// Update Map (zoom/routes), KPIs, Charts, PBs, and Geo Summary when sport filter changes
+// Update Map (zoom/routes), KPIs, Charts, PBs, and Performance Summary when sport filter changes
 sportFilter.addEventListener('change', function() {
   renderAll();
 });
 
 
-// -----------------------
-// Render All (central refresh)
-// -----------------------
-function renderAll() {
-  const sport = sportFilter.value;
-  const bounds = map.getBounds();
-
-  // 1. Map Update: Includes the logic for fitBounds based on new filters
-  updateMap(sport, filterByDate); 
-
-  // 2. Geographic Summary Update: Must be called after map update determines the overall set of visible data
-  renderGeographicSummary(sport, bounds, filterByDate); 
-  
-  // 3. KPI Update
-  renderKPIs(sport, bounds, filterByDate);
-  
-  // 4. Chart Update
-  updateChart(sport, bounds, filterByDate);
-  
-  // 5. PBs Update
-  renderPersonalBests(sport, bounds, filterByDate); 
-}
-
 //------------------ Initialization ------------------//
 loadDefaultData();
+
