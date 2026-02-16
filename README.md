@@ -33,8 +33,8 @@ project/
 ├── script.js # App logic 
 ├── images/ # Logos, screenshots, GIFs
 │ ├── dashboard-icon.png # Flavicon
-│ ├── dashboard-demo.gif
-│ ├── dashboard-screenshot.png
+│ ├── dashboard-snap.png
+│ ├── dashboard-snap2.png
 │ └── NS-logo.png # Author's Logo
 └── README.md # This file
 ```
