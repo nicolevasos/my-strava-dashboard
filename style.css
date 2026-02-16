@@ -23,6 +23,15 @@ body {
     line-height: 1.6;
 }
 
+body.banner-active {
+    padding-top: 90px;  /* adjust to banner height */
+}
+
+body.footer-active {
+    padding-bottom: 70px; /* match footer height */
+}
+
+
 h1, h2, h3 {
     margin: 0;
     font-weight: 600;
@@ -48,6 +57,15 @@ h3 {
     margin-bottom: 15px;
     box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
     flex-wrap: wrap;
+}
+
+#topBanner.fixed-banner {
+    position: fixed;
+    top: 3px;          /* match body padding */
+    left: 9px;         /* match body padding */
+    right: 9px;        /* match body padding */
+    width: auto;
+    z-index: 3000;
 }
 
 #topBanner .title {
@@ -369,6 +387,7 @@ h3 {
  * 11. Footer
  * ---------------------------------------------------- */
 #footerBanner {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -426,6 +445,19 @@ h3 {
     cursor: pointer;
 }
 
+#footerBanner.fixed-footer {
+    position: fixed;
+    bottom: 0;
+    left: 10px;     /* match body margin */
+    right: 10px;    /* match body margin */
+    width: auto;
+    z-index: 2000;
+    border-radius: 8px;
+    box-shadow: 0 -3px 6px rgba(0, 0, 0, 0.2);
+    margin-bottom: 5px;
+}
+
+
 /* Modal link styling */
 .modal-link {
   display: inline-block;
@@ -469,6 +501,9 @@ h3 {
 /* --- iPad / Tablet Portrait (768px and below) --- */
 @media (max-width: 768px) {
     /* Header Stacking and Padding adjustments (Good for iPad portrait) */
+        body.banner-active {
+        padding-top: 220px; /* increase because banner stacks */
+    }
     #topBanner {
         flex-direction: column;
         align-items: flex-start;

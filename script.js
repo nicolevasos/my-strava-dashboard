@@ -128,6 +128,27 @@ function decodePolyline(str, precision = 5) {
   return coordinates;
 }
 
+function checkScroll() {
+    const footer = document.getElementById("footerBanner");
+    const banner = document.getElementById("topBanner");
+    const body = document.body;
+
+    if (document.documentElement.scrollHeight > window.innerHeight) {
+        footer.classList.add("fixed-footer");
+        banner.classList.add("fixed-banner");
+        body.classList.add("footer-active");
+        body.classList.add("banner-active");
+    } else {
+        footer.classList.remove("fixed-footer");
+        banner.classList.remove("fixed-banner");
+        body.classList.remove("footer-active");
+        body.classList.remove("banner-active");
+    }
+}
+
+window.addEventListener("load", checkScroll);
+window.addEventListener("resize", checkScroll);
+
 //------------------ Filters ------------------//
 
 // Filter by sport
@@ -436,9 +457,6 @@ function updateChart(selectedSport, bounds = null, filterByDate = ()=>true) {
 }
 
 const uploadBtn = document.getElementById('uploadDataBtn');
-
-
-
 
 // Trigger file selection dialog
 uploadBtn.addEventListener('click', () => {
