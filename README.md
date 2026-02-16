@@ -8,7 +8,8 @@ Upload your file, explore your routes on a map, and see your stats in an interac
 ## Preview
 
 **Dashboard Overview**  
-![Dashboard Screenshot](images/dashboard-screenshot.png)
+![Dashboard Screenshot](images/dashboard-snap.png)
+![Dashboard Screenshot](images/dashboard-snap2.png)
 
 ---
 
